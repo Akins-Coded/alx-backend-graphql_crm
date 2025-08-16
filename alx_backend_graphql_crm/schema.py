@@ -14,7 +14,12 @@ class Query(graphene.ObjectType):
     orders = graphene.List(OrderType)
 
     def resolve_customers(root, info):
-        from crm.models import Customer
         return Customer.objects.all()
+
+    def resolve_products(root, info):
+        return Product.objects.all()
+
+    def resolve_orders(root, info):
+        return Order.objects.all()
 
 schema = graphene.Schema(query=Query, mutation=Mutation)
