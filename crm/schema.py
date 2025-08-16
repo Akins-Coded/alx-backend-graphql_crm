@@ -36,7 +36,7 @@ class CustomerInput(graphene.InputObjectType):
 
 class ProductInput(graphene.InputObjectType):
     name = graphene.String(required=True)
-    price = graphene.Float(required=True) # Accept as string to safely convert to Decimal
+    price = graphene.Decimal(required=True) # Accept as string to safely convert to Decimal
     stock = graphene.Int(default_value=0)
 
 
