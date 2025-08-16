@@ -46,54 +46,46 @@ class CreateCustomer(graphene.Mutation):
         customer = Customer.objects.create(name=name, email=email, phone=phone)
         return CreateCustomer(customer=customer, message="Customer created successfully")
 
+class CustomerInput(graphene.InputObjectType):
+    name = graphene.String(required=True)
+    email = graphene.String(required=True)
+    phone = graphene.String()
+
 class BulkCreateCustomers(graphene.Mutation):
-     class Arguments:
-        customers = graphene.List(
-            graphene.NonNull(
-                graphene.InputObjectType(
-                    name="CustomerInput",
-                    fields={
-                        "name": graphene.String(required=True),
-                        "email": graphene.String(required=True),
-                        "phone": graphene.String(),
-                    },
-                )
-            ),
-            required=True
-        )
+    class Arguments:
+        customers = graphene.List(graphene.NonNull(CustomerInput), required=True)
 
-        customers = graphene.List(CustomerType)
-        errors = graphene.List(graphene.String)
+    customers = graphene.List(CustomerType)
+    errors = graphene.List(graphene.String)
 
-        def mutate(self, info, customers):
-            created_customers = []
-            errors = []
+    def mutate(self, info, customers):
+        created_customers = []
+        errors = []
 
-            with transaction.atomic():
-                for idx, cust in enumerate(customers, start=1):
-                    try:
-                        validate_email(cust.email)
-                        if Customer.objects.filter(email=cust.email).exists():
-                            errors.append(f"Row {idx}: Email already exists")
-                            continue
-                        if cust.phone and not (
-                            cust.phone.startswith("+") or cust.phone.replace("-", "").isdigit()
-                        ):
-                            errors.append(f"Row {idx}: Invalid phone format")
-                            continue
+        with transaction.atomic():
+            for idx, cust in enumerate(customers, start=1):
+                try:
+                    validate_email(cust.email)
+                    if Customer.objects.filter(email=cust.email).exists():
+                        errors.append(f"Row {idx}: Email already exists")
+                        continue
+                    if cust.phone and not (
+                        cust.phone.startswith("+") or cust.phone.replace("-", "").isdigit()
+                    ):
+                        errors.append(f"Row {idx}: Invalid phone format")
+                        continue
 
-                        created_customers.append(
-                            Customer.objects.create(
-                                name=cust.name,
-                                email=cust.email,
-                                phone=cust.phone
-                            )
+                    created_customers.append(
+                        Customer.objects.create(
+                            name=cust.name,
+                            email=cust.email,
+                            phone=cust.phone
                         )
-                    except ValidationError:
-                        errors.append(f"Row {idx}: Invalid email format")
+                    )
+                except ValidationError:
+                    errors.append(f"Row {idx}: Invalid email format")
 
-            return BulkCreateCustomers(customers=created_customers, errors=errors)
-
+        return BulkCreateCustomers(customers=created_customers, errors=errors)
 
 class CreateProduct(graphene.Mutation):
     class Arguments:
