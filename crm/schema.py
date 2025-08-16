@@ -7,6 +7,9 @@ from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
 from .models import Customer, Product, Order
 from django.utils import timezone
+from .filters import CustomerFilter, ProductFilter, OrderFilter
+from graphene_django.filter import DjangoFilterConnectionField
+
 
 # -------------------- Types --------------------
 class CustomerType(DjangoObjectType):
@@ -21,6 +24,25 @@ class OrderType(DjangoObjectType):
     class Meta:
         model = Order
 
+class CustomerNode(DjangoObjectType):
+    class Meta:
+        model = Customer
+        filterset_class = CustomerFilter
+        interfaces = (graphene.relay.Node,)
+
+class ProductNode(DjangoObjectType):
+    class Meta:
+        model = Product
+        filterset_class = ProductFilter
+        interfaces = (graphene.relay.Node,)
+
+class OrderNode(DjangoObjectType):
+    class Meta:
+        model = Order
+        filterset_class = OrderFilter
+        interfaces = (graphene.relay.Node,)
+
+
 
 # -------------------- Input Objects --------------------
 class CustomerInput(graphene.InputObjectType):
@@ -31,7 +53,7 @@ class CustomerInput(graphene.InputObjectType):
 
 class ProductInput(graphene.InputObjectType):
     name = graphene.String(required=True)
-    price = graphene.Float(required=True) # Accept as string to safely convert to Decimal
+    price = graphene.String(required=True) 
     stock = graphene.Int(default_value=0)
 
 
@@ -172,3 +194,39 @@ class Mutation(graphene.ObjectType):
     create_product = CreateProduct.Field()
     create_order = CreateOrder.Field()
 
+
+
+# -------------------- Queries --------------------
+class Query(graphene.ObjectType):
+    all_customers = DjangoFilterConnectionField(CustomerNode)
+    all_products = DjangoFilterConnectionField(ProductNode)
+    all_orders = DjangoFilterConnectionField(OrderNode)
+
+    # Optional custom ordering argument
+    all_customers_ordered = DjangoFilterConnectionField(
+        CustomerNode, order_by=graphene.List(of_type=graphene.String)
+    )
+    all_products_ordered = DjangoFilterConnectionField(
+        ProductNode, order_by=graphene.List(of_type=graphene.String)
+    )
+    all_orders_ordered = DjangoFilterConnectionField(
+        OrderNode, order_by=graphene.List(of_type=graphene.String)
+    )
+
+    def resolve_all_customers_ordered(root, info, order_by=None, **kwargs):
+        qs = Customer.objects.all()
+        if order_by:
+            qs = qs.order_by(*order_by)
+        return qs
+
+    def resolve_all_products_ordered(root, info, order_by=None, **kwargs):
+        qs = Product.objects.all()
+        if order_by:
+            qs = qs.order_by(*order_by)
+        return qs
+
+    def resolve_all_orders_ordered(root, info, order_by=None, **kwargs):
+        qs = Order.objects.all()
+        if order_by:
+            qs = qs.order_by(*order_by)
+        return qs
