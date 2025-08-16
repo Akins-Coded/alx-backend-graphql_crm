@@ -1,13 +1,21 @@
 import graphene
 import re
 from graphene_django.types import DjangoObjectType
-from .models import Customer
+from .models import Customer, Product, Order
 from graphql import GraphQLError
 from django.db import transaction
 
 class CustomerType(DjangoObjectType):
     class Meta:
         model = Customer
+
+class ProductType(DjangoObjectType):
+    class Meta:
+        model = Product
+
+class OrderType(DjangoObjectType):
+    class Meta:
+        model = Order
 
 class CreateCustomer(graphene.Mutation):
     class Arguments:
@@ -19,71 +27,127 @@ class CreateCustomer(graphene.Mutation):
     message = graphene.String()
 
     def mutate(self, info, name, email, phone=None):
-        # Validation + saving will go here
-        from graphql import GraphQLError
+        # Validate email
+        try:
+            validate_email(email)
+        except ValidationError:
+            raise GraphQLError("Invalid email format")
 
+        # Ensure unique email
         if Customer.objects.filter(email=email).exists():
-            raise GraphQLError("Customer with this email already exists.")
+            raise GraphQLError("Email already exists")
 
-        if phone and not re.match(r'^(\+\d{10,15}|\d{3}-\d{3}-\d{4})$', phone):
-            raise GraphQLError("Invalid phone number format. Use +1234567890 or 123-456-7890.")
+        # Optional phone validation
+        if phone and not (
+            phone.startswith("+") or phone.replace("-", "").isdigit()
+        ):
+            raise GraphQLError("Invalid phone format. Use +1234567890 or 123-456-7890")
 
-        customer = Customer(name=name, email=email, phone=phone)
-        customer.save()
-        return CreateCustomer(customer=customer, message="Customer created successfully.")
+        customer = Customer.objects.create(name=name, email=email, phone=phone)
+        return CreateCustomer(customer=customer, message="Customer created successfully")
 
 class BulkCreateCustomers(graphene.Mutation):
-    class Arguments:
+     class Arguments:
         customers = graphene.List(
-            graphene.InputObjectType(
-                'CustomerInput',
-                name=graphene.String(required=True),
-                email=graphene.String(required=True),
-                phone=graphene.String(required=False)
+            graphene.NonNull(
+                graphene.InputObjectType(
+                    name="CustomerInput",
+                    fields={
+                        "name": graphene.String(required=True),
+                        "email": graphene.String(required=True),
+                        "phone": graphene.String(),
+                    },
+                )
             ),
             required=True
         )
 
-    customers = graphene.List(CustomerType)
-    errors = graphene.List(graphene.String)
+        customers = graphene.List(CustomerType)
+        errors = graphene.List(graphene.String)
 
-def mutate(self, info, customers):
-    
-    valid_customers = []
-    errors = []
+        def mutate(self, info, customers):
+            created_customers = []
+            errors = []
 
-    phone_regex = re.compile(r'^(\+\d{10,15}|\d{3}-\d{3}-\d{4})$')
-    existing_emails = set(Customer.objects.values_list('email', flat=True))
-    new_emails = set()
+            with transaction.atomic():
+                for idx, cust in enumerate(customers, start=1):
+                    try:
+                        validate_email(cust.email)
+                        if Customer.objects.filter(email=cust.email).exists():
+                            errors.append(f"Row {idx}: Email already exists")
+                            continue
+                        if cust.phone and not (
+                            cust.phone.startswith("+") or cust.phone.replace("-", "").isdigit()
+                        ):
+                            errors.append(f"Row {idx}: Invalid phone format")
+                            continue
 
-    for index, customer in enumerate(customers):
-        # Check duplicate in DB or in current batch
-        if customer.email in existing_emails or customer.email in new_emails:
-            errors.append(f"Customer {index+1}: Email '{customer.email}' already exists.")
-            continue
+                        created_customers.append(
+                            Customer.objects.create(
+                                name=cust.name,
+                                email=cust.email,
+                                phone=cust.phone
+                            )
+                        )
+                    except ValidationError:
+                        errors.append(f"Row {idx}: Invalid email format")
 
-        # Validate phone number
-        if customer.phone and not phone_regex.match(customer.phone):
-            errors.append(f"Customer {index+1}: Invalid phone number '{customer.phone}'.")
-            continue
+            return BulkCreateCustomers(customers=created_customers, errors=errors)
 
-        valid_customers.append(
-            Customer(name=customer.name, email=customer.email, phone=customer.phone)
+
+class CreateProduct(graphene.Mutation):
+    class Arguments:
+        name = graphene.String(required=True)
+        price = graphene.Float(required=True)
+        stock = graphene.Int(required=False, default_value=0)
+
+    product = graphene.Field(ProductType)
+
+    def mutate(self, info, name, price, stock):
+        if price <= 0:
+            raise GraphQLError("Price must be positive")
+        if stock < 0:
+            raise GraphQLError("Stock cannot be negative")
+
+        product = Product.objects.create(name=name, price=price, stock=stock)
+        return CreateProduct(product=product)
+
+
+class CreateOrder(graphene.Mutation):
+    class Arguments:
+        customer_id = graphene.ID(required=True)
+        product_ids = graphene.List(graphene.NonNull(graphene.ID), required=True)
+        order_date = graphene.DateTime(required=False)
+
+    order = graphene.Field(OrderType)
+
+    def mutate(self, info, customer_id, product_ids, order_date=None):
+        try:
+            customer = Customer.objects.get(id=customer_id)
+        except Customer.DoesNotExist:
+            raise GraphQLError("Invalid customer ID")
+
+        products = list(Product.objects.filter(id__in=product_ids))
+        if len(products) != len(product_ids):
+            raise GraphQLError("Some product IDs are invalid")
+
+        if not products:
+            raise GraphQLError("Order must include at least one product")
+
+        total_amount = sum(p.price for p in products)
+        order = Order.objects.create(
+            customer=customer,
+            order_date=order_date or None,
+            total_amount=total_amount
         )
-        new_emails.add(customer.email)
+        order.products.set(products)
 
-    # Save valid customers if there are no errors
-    if valid_customers:
-        with transaction.atomic():
-            Customer.objects.bulk_create(valid_customers)
+        return CreateOrder(order=order)
 
-    return CreateCustomers(
-        customers=valid_customers,
-        errors=errors,
-        message=(
-            "Some customers were not created due to errors."
-            if errors else
-            "All customers created successfully."
-        )
-    )
-    
+
+# ----------------- Schema Mutation -----------------
+class Mutation(graphene.ObjectType):
+    create_customer = CreateCustomer.Field()
+    bulk_create_customers = BulkCreateCustomers.Field()
+    create_product = CreateProduct.Field()
+    create_order = CreateOrder.Field()
