@@ -1,4 +1,6 @@
-django-crontab
+django
+djangorestframework
 graphene-django
 gql
-django-filters
+django-filter
+django-crontab

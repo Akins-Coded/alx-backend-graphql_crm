@@ -19,6 +19,7 @@ class CustomerType(DjangoObjectType):
 class ProductType(DjangoObjectType):
     class Meta:
         model = Product
+        fields = ("id", "name", "stock")
 
 class OrderType(DjangoObjectType):
     class Meta:
@@ -230,3 +231,39 @@ class Query(graphene.ObjectType):
         if order_by:
             qs = qs.order_by(*order_by)
         return qs
+
+
+class UpdateLowStockProducts(graphene.Mutation):
+    class Arguments:
+        pass  # no arguments needed
+
+    success = graphene.Boolean()
+    message = graphene.String()
+    updated_products = graphene.List(ProductType)
+
+    @classmethod
+    def mutate(cls, root, info):
+        low_stock_products = Product.objects.filter(stock__lt=10)
+        updated = []
+
+        for product in low_stock_products:
+            product.stock += 10  # simulate restock
+            product.save()
+            updated.append(product)
+
+        if updated:
+            return UpdateLowStockProducts(
+                success=True,
+                message=f"{len(updated)} products updated at {timezone.now()}",
+                updated_products=updated,
+            )
+        else:
+            return UpdateLowStockProducts(
+                success=True,
+                message="No low-stock products found",
+                updated_products=[]
+            )
+
+
+class Mutation(graphene.ObjectType):
+    update_low_stock_products = UpdateLowStockProducts.Field()
