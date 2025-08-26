@@ -1,0 +1,4 @@
+django-crontab
+graphene-django
+gql
+django-filters
