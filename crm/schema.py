@@ -9,7 +9,7 @@ from .models import Customer, Product, Order
 from django.utils import timezone
 from .filters import CustomerFilter, ProductFilter, OrderFilter
 from graphene_django.filter import DjangoFilterConnectionField
-
+from crm.models import Product
 
 # -------------------- Types --------------------
 class CustomerType(DjangoObjectType):

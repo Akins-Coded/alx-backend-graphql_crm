@@ -7,8 +7,8 @@ class Customer(models.Model):
     email = models.EmailField(max_length=100, unique=True)
     phone = models.CharField(max_length=15, null=True, blank=True)
 
-def __str__(self):
-        return f"{self.name} ({self.email})"
+    def __str__(self):
+            return f"{self.name} ({self.email})"
 
 class Product(models.Model):
     name = models.CharField(max_length=100)
@@ -18,6 +18,7 @@ class Product(models.Model):
 
     def __str__(self):
       return f"{self.name} - ${self.price}"
+    
 class Order(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="orders")
     products = models.ManyToManyField(Product, related_name="orders")
